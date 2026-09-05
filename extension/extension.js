@@ -65,13 +65,13 @@ class SelectionTranslator {
     // ---------- 启用 / 禁用 ----------
     start() {
         this._destroyed = false;
-        console.log('selection-translator: 扩展已启动');
+        console.error('selection-translator: 扩展已启动');
 
         // 监听系统 PRIMARY 选区（即鼠标划选）
         this._selection = global.display.get_selection();
         this._selId = this._selection.connect('owner-changed',
             (sel, selType, source) => {
-                console.log('selection-translator: owner-changed selType=' +
+                console.error('selection-translator: owner-changed selType=' +
                     selType);
                 if (selType !== Meta.SelectionType.SELECTION_PRIMARY)
                     return;
@@ -189,7 +189,7 @@ class SelectionTranslator {
             return;
         St.Clipboard.get_default().get_text(
             St.ClipboardType.PRIMARY, (clipboard, text) => {
-                console.log('selection-translator: get_text 回调, enabled=' +
+                console.error('selection-translator: get_text 回调, enabled=' +
                     this._config.enabled + ' autoPopup=' +
                     this._config.autoPopup + ' len=' +
                     (text ? text.length : 'null'));
@@ -363,7 +363,7 @@ class SelectionTranslator {
 
         this._popup = box;
         this._popupSource = (sourceText || '').replace(/\s+/g, ' ').trim();
-        console.log('selection-translator: 卡片打开, source=' +
+        console.error('selection-translator: 卡片打开, source=' +
             this._popupSource.slice(0, 40));
 
         // 点击弹窗外 / 按 Esc 关闭
@@ -400,7 +400,7 @@ class SelectionTranslator {
                         return;
                     text = (text || '').replace(/\s+/g, ' ').trim();
                     if (!text || text !== this._popupSource) {
-                        console.log('selection-translator: 选区已清空或改变，关闭卡片');
+                        console.error('selection-translator: 选区已清空或改变，关闭卡片');
                         this._closePopup();
                     }
                 });
