@@ -1,0 +1,8 @@
+{
+  "uuid": "selection-translator@kimi",
+  "name": "划词翻译",
+  "description": "选中文字后弹出按钮，点击即可翻译：单词显示音标与释义（本地 ECDICT 离线词库），句子走在线翻译（有道）。支持英译汉、汉译英。",
+  "shell-version": ["50"],
+  "version": 1,
+  "url": "https://localhost/selection-translator"
+}

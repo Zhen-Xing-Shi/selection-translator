@@ -1,0 +1,73 @@
+/* 划词翻译扩展样式 */
+.st-btn {
+    background-color: #3584e4;
+    color: #ffffff;
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.st-btn:hover {
+    background-color: #1c71d8;
+}
+
+.st-popup {
+    background-color: #ffffff;
+    color: #1a1a1a;
+    border-radius: 12px;
+    border: 1px solid #d8d8d8;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    padding: 12px 14px;
+    width: 400px;
+}
+.st-popup-word {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1a1a1a;
+}
+.st-popup-phonetic {
+    font-size: 14px;
+    color: #5f6368;
+}
+.st-popup-tag {
+    font-size: 11px;
+    color: #ffffff;
+    background-color: #9a9996;
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+.st-popup-line {
+    font-size: 14px;
+    color: #1a1a1a;
+}
+.st-popup-src {
+    font-size: 12px;
+    color: #777777;
+}
+.st-popup-dim {
+    font-size: 12px;
+    color: #777777;
+}
+.st-popup-sep {
+    background-color: #e5e5e5;
+    height: 1px;
+    margin: 6px 0;
+}
+.st-popup-btn {
+    background-color: #f1f3f4;
+    color: #1a1a1a;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+.st-popup-btn:hover {
+    background-color: #e2e5e7;
+}
+.st-scroll {
+    max-height: 400px;
+}
+.st-panel-label {
+    font-size: 13px;
+    font-weight: bold;
+}
