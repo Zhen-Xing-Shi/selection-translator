@@ -4,6 +4,7 @@ import Meta from 'gi://Meta';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
+import Shell from 'gi://Shell';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -27,6 +28,8 @@ class SelectionTranslator {
         this._button = null;
         this._popup = null;
         this._popupTime = 0;
+        this._grabbed = false;
+        this._overviewId = 0;
         this._popupSource = null;   // 卡片对应的原文（用于检测选区变化）
         this._pollId = 0;
         this._indicator = null;
@@ -84,6 +87,10 @@ class SelectionTranslator {
             () => {
                 this._closePopup();
             });
+
+        // 打开概览时关闭卡片（避免抓取冲突）
+        this._overviewId = Main.overview.connect('showing',
+            () => this._closePopup());
 
         // 悬浮“译”按钮
         this._button = new St.Button({
@@ -150,6 +157,10 @@ class SelectionTranslator {
         if (this._focusId) {
             global.display.disconnect(this._focusId);
             this._focusId = 0;
+        }
+        if (this._overviewId) {
+            Main.overview.disconnect(this._overviewId);
+            this._overviewId = 0;
         }
         this._cancelDebounce();
         this._cancelAutohide();
@@ -380,23 +391,68 @@ class SelectionTranslator {
         console.error('selection-translator: 卡片打开, source=' +
             this._popupSource.slice(0, 40));
 
-        // 点击弹窗外 / 按 Esc 关闭
+        // 模态抓取：让 shell 能捕获落在任意应用窗口内的点击/按键
+        //（Wayland 下检测“点击卡片外部”的唯一可靠途径）
+        this._grabbed = false;
+        try {
+            this._grabbed = Main.pushModal(this._popup,
+                {actionMode: Shell.ActionMode.POPUP});
+        } catch (e) {
+            this._grabbed = false;
+        }
+        console.error('selection-translator: 模态抓取=' + this._grabbed);
+
+        // 全局事件捕获（配合模态抓取生效）
         this._stageCaptureId = global.stage.connect('captured-event',
             (actor, event) => {
                 const type = event.type();
-                if (type === Clutter.EventType.KEY_PRESS &&
-                    event.get_key_symbol() === Clutter.KEY_Escape) {
+                if (type === Clutter.EventType.KEY_PRESS) {
+                    const sym = event.get_key_symbol();
+                    // Super 键放行（用户可能想开概览）
                     this._closePopup();
+                    if (sym === Clutter.KEY_Super_L ||
+                        sym === Clutter.KEY_Super_R)
+                        return Clutter.EVENT_PROPAGATE;
+                    console.error('selection-translator: 按键，关闭卡片');
                     return Clutter.EVENT_STOP;
                 }
                 if (type === Clutter.EventType.BUTTON_PRESS) {
+                    const [ex, ey] = event.get_coords();
+                    // 点击悬浮“译”按钮 -> 直接翻译新选区（不让抓取吃掉）
+                    if (this._button && this._button.visible) {
+                        const b = this._button.get_allocation_box();
+                        if (ex >= b.x1 && ex <= b.x2 &&
+                            ey >= b.y1 && ey <= b.y2) {
+                            const text = this._currentText;
+                            this._closePopup();
+                            this._hideButton();
+                            if (text)
+                                this._translate(text);
+                            return Clutter.EVENT_STOP;
+                        }
+                    }
+                    const alloc = this._popup
+                        ? this._popup.get_allocation_box() : null;
+                    if (alloc &&
+                        (ex < alloc.x1 || ex > alloc.x2 ||
+                         ey < alloc.y1 || ey > alloc.y2)) {
+                        console.error(
+                            'selection-translator: 点击卡片外部，关闭卡片');
+                        this._closePopup();
+                    }
+                    return Clutter.EVENT_PROPAGATE;
+                }
+                if (type === Clutter.EventType.SCROLL) {
+                    // 卡片外滚动 = 用户已继续阅读 -> 关闭；卡片内滚动放行
                     const [ex, ey] = event.get_coords();
                     const alloc = this._popup
                         ? this._popup.get_allocation_box() : null;
                     if (alloc &&
                         (ex < alloc.x1 || ex > alloc.x2 ||
-                         ey < alloc.y1 || ey > alloc.y2))
+                         ey < alloc.y1 || ey > alloc.y2)) {
                         this._closePopup();
+                        return Clutter.EVENT_STOP;
+                    }
                 }
                 return Clutter.EVENT_PROPAGATE;
             });
@@ -421,9 +477,9 @@ class SelectionTranslator {
             return GLib.SOURCE_CONTINUE;
         });
 
-        // 结果弹窗 30 秒无操作自动关闭
+        // 结果弹窗 20 秒无操作自动关闭（抓取会接管键盘，不宜过长）
         this._popupTimeout = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT, 30000, () => {
+            GLib.PRIORITY_DEFAULT, 20000, () => {
                 this._popupTimeout = 0;
                 this._closePopup();
                 return GLib.SOURCE_REMOVE;
@@ -532,6 +588,12 @@ class SelectionTranslator {
         this._stopPoll();
         this._popupSource = null;
         this._popupTime = 0;
+        if (this._grabbed && this._popup) {
+            try {
+                Main.popModal(this._popup);
+            } catch (e) { /* 抓取可能已被系统解除 */ }
+            this._grabbed = false;
+        }
         if (this._popupTimeout) {
             GLib.source_remove(this._popupTimeout);
             this._popupTimeout = 0;
