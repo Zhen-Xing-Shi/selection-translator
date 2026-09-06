@@ -23,9 +23,10 @@ const MAX_TEXT_LEN = 1500;
 
 
 class SelectionTranslator {
-    constructor(uuid) {
+    constructor(uuid, manualStart) {
         this._uuid = uuid;
-        this._config = {enabled: true, autoPopup: false};
+        this._manualStart = manualStart;   // 通过启动器手动启动
+        this._config = {enabled: true, autoPopup: false, autostart: false};
         this._button = null;
         this._buttonGrab = null;    // 按钮的指针级抓取（不影响键盘）
         this._popup = null;
@@ -50,7 +51,8 @@ class SelectionTranslator {
             if (ok) {
                 const cfg = JSON.parse(new TextDecoder().decode(bytes));
                 this._config = Object.assign(
-                    {enabled: true, autoPopup: false}, cfg);
+                    {enabled: true, autoPopup: false, autostart: false},
+                    cfg);
             }
         } catch (e) {
             // 配置文件缺失/损坏时使用默认值
@@ -70,6 +72,12 @@ class SelectionTranslator {
     // ---------- 启用 / 禁用 ----------
     start() {
         this._destroyed = false;
+        // 登录时自动加载且未开启“开机启动”-> 休眠：不建托盘、不监听选区
+        if (!this._config.autostart && !this._manualStart) {
+            console.error('selection-translator: 开机启动已关闭，本次休眠' +
+                '（可从应用列表「划词翻译」图标手动启动）');
+            return;
+        }
         console.error('selection-translator: 扩展已启动');
 
         // 监听系统 PRIMARY 选区（即鼠标划选）
@@ -134,7 +142,7 @@ class SelectionTranslator {
     }
 
     _buildIndicator() {
-        this._indicator = new PanelMenu.Button(0.0, '划词翻译', false);
+        this._indicator = new PanelMenu.Button(0.5, '划词翻译', false);
         const label = new St.Label({
             text: '译', style_class: 'st-panel-label', y_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
@@ -163,8 +171,18 @@ class SelectionTranslator {
 
         this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        const quitItem = new PopupMenu.PopupMenuItem(
-            '退出划词翻译（同时取消开机自启）');
+        // 开机启动开关：只写入配置，不影响当前运行状态
+        const autostartItem = new PopupMenu.PopupSwitchMenuItem(
+            '开机启动', this._config.autostart);
+        autostartItem.connect('toggled', item => {
+            this._config.autostart = item.state;
+            this._saveConfig();
+            console.error('selection-translator: 开机启动=' + item.state);
+        });
+        this._indicator.menu.addMenuItem(autostartItem);
+
+        // 退出：停止当前运行（不影响开机启动开关状态）
+        const quitItem = new PopupMenu.PopupMenuItem('退出');
         quitItem.connect('activate', () => this._quit());
         this._indicator.menu.addMenuItem(quitItem);
 
@@ -172,17 +190,12 @@ class SelectionTranslator {
             1, 'right');
     }
 
-    // 退出：从启用列表移除自身，shell 会立即停用本扩展，
-    // 之后也不会随登录自动加载；可通过应用列表里的“划词翻译”图标启动
+    // 退出：停止全部功能并隐藏托盘图标（扩展仍在启用列表中，
+    // 是否随登录启动由「开机启动」开关决定；
+    // 会话内可通过应用列表的「划词翻译」图标重新启动）
     _quit() {
-        try {
-            const settings = new Gio.Settings({schema_id: 'org.gnome.shell'});
-            const list = settings.get_strv('enabled-extensions');
-            settings.set_strv('enabled-extensions',
-                list.filter(u => u !== this._uuid));
-        } catch (e) {
-            console.error('selection-translator: 退出失败', e);
-        }
+        console.error('selection-translator: 用户退出');
+        this.stop();
     }
 
     stop() {
@@ -653,7 +666,18 @@ class SelectionTranslator {
 
 export default class extends Extension {
     enable() {
-        this._impl = new SelectionTranslator(this.uuid);
+        // 启动器手动启动标记：存在则视为手动启动并消费掉
+        let manualStart = false;
+        const flag = GLib.build_filenamev(
+            [GLib.get_user_cache_dir(), 'selection-translator',
+             'manual-start']);
+        try {
+            if (GLib.file_test(flag, GLib.FileTest.EXISTS)) {
+                manualStart = true;
+                GLib.unlink(flag);
+            }
+        } catch (e) { /* 忽略 */ }
+        this._impl = new SelectionTranslator(this.uuid, manualStart);
         this._impl.start();
     }
 

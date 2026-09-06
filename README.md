@@ -23,20 +23,20 @@
 `~/.config/selection-translator/config.json`：
 
 ```json
-{"enabled": true, "autoPopup": false}
+{"enabled": true, "autoPopup": false, "autostart": false}
 ```
 
 - `enabled`：总开关（顶栏「译」菜单也可切换）
 - `autoPopup`：选中后直接弹结果（免点击按钮）
+- `autostart`：开机启动（面板菜单开关）
 
-## 启动 / 退出
+## 启动 / 退出 / 开机启动
 
 - 启动：应用列表（Show Apps）中的「划词翻译」图标，或执行
-  `gnome-extensions enable selection-translator@kimi`
-- 退出：顶栏「译」菜单 →「退出划词翻译（同时取消开机自启）」，
-  立即停止且不再随登录加载
-- 默认不随开机启动；若运行时直接关机未退出，下次登录仍会加载，
-  在面板菜单点一次「退出」即可
+  `~/.local/share/selection-translator/start.sh`
+- 退出：顶栏「译」菜单 →「退出」（停止当前运行，不影响开机启动开关）
+- 开机启动：顶栏「译」菜单 →「开机启动」开关；off 时登录后扩展休眠
+  （不显示托盘、不监听选区），可随时用启动图标唤醒
 
 ## 卸载
 
