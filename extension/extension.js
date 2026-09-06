@@ -74,8 +74,6 @@ class SelectionTranslator {
         this._selection = global.display.get_selection();
         this._selId = this._selection.connect('owner-changed',
             (sel, selType, source) => {
-                console.error('selection-translator: owner-changed selType=' +
-                    selType);
                 if (selType !== Meta.SelectionType.SELECTION_PRIMARY)
                     return;
                 this._scheduleCheck();
@@ -212,10 +210,6 @@ class SelectionTranslator {
             return;
         St.Clipboard.get_default().get_text(
             St.ClipboardType.PRIMARY, (clipboard, text) => {
-                console.error('selection-translator: get_text 回调, enabled=' +
-                    this._config.enabled + ' autoPopup=' +
-                    this._config.autoPopup + ' len=' +
-                    (text ? text.length : 'null'));
                 if (this._destroyed)
                     return;
                 text = (text || '').replace(/\s+/g, ' ').trim();
