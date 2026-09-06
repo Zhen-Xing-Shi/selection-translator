@@ -28,7 +28,7 @@ class SelectionTranslator {
         this._button = null;
         this._popup = null;
         this._popupTime = 0;
-        this._grabbed = false;
+        this._grab = null;
         this._overviewId = 0;
         this._popupSource = null;   // 卡片对应的原文（用于检测选区变化）
         this._pollId = 0;
@@ -36,7 +36,6 @@ class SelectionTranslator {
         this._selId = 0;
         this._debounceId = 0;
         this._hideId = 0;
-        this._stageCaptureId = 0;
         this._currentText = null;
         this._destroyed = false;
         this._loadConfig();
@@ -392,70 +391,62 @@ class SelectionTranslator {
             this._popupSource.slice(0, 40));
 
         // 模态抓取：让 shell 能捕获落在任意应用窗口内的点击/按键
-        //（Wayland 下检测“点击卡片外部”的唯一可靠途径）
-        this._grabbed = false;
+        //（与 GNOME 弹出菜单同款机制，Wayland 下检测“点击卡片外部”的唯一
+        //  可靠途径）。注意：pushModal 返回 Grab 对象，popModal 必须传它。
+        this._grab = null;
         try {
-            this._grabbed = Main.pushModal(this._popup,
+            this._grab = Main.pushModal(this._popup,
                 {actionMode: Shell.ActionMode.POPUP});
         } catch (e) {
-            this._grabbed = false;
+            this._grab = null;
         }
-        console.error('selection-translator: 模态抓取=' + this._grabbed);
+        console.error('selection-translator: 模态抓取=' + !!this._grab);
 
-        // 全局事件捕获（配合模态抓取生效）
-        this._stageCaptureId = global.stage.connect('captured-event',
-            (actor, event) => {
-                const type = event.type();
-                if (type === Clutter.EventType.KEY_PRESS) {
-                    const sym = event.get_key_symbol();
-                    // Super 键放行（用户可能想开概览）
+        // 事件捕获必须挂在被抓取的 actor 自己身上（GNOME 菜单同款写法），
+        // 用 get_event_actor 判断事件真实目标
+        this._popup.connect('captured-event', (actor, event) => {
+            const type = event.type();
+            if (type === Clutter.EventType.KEY_PRESS) {
+                const sym = event.get_key_symbol();
+                // Super 键放行（用户可能想开概览）
+                this._closePopup();
+                if (sym === Clutter.KEY_Super_L ||
+                    sym === Clutter.KEY_Super_R)
+                    return Clutter.EVENT_PROPAGATE;
+                console.error('selection-translator: 按键，关闭卡片');
+                return Clutter.EVENT_STOP;
+            }
+            if (type === Clutter.EventType.BUTTON_PRESS ||
+                type === Clutter.EventType.TOUCH_BEGIN) {
+                const target = global.stage.get_event_actor(event);
+                // 点击悬浮“译”按钮 -> 直接翻译新选区（不让抓取吃掉）
+                if (target && this._button && this._button.visible &&
+                    (target === this._button ||
+                     this._button.contains(target))) {
+                    const text = this._currentText;
                     this._closePopup();
-                    if (sym === Clutter.KEY_Super_L ||
-                        sym === Clutter.KEY_Super_R)
-                        return Clutter.EVENT_PROPAGATE;
-                    console.error('selection-translator: 按键，关闭卡片');
+                    this._hideButton();
+                    if (text)
+                        this._translate(text);
                     return Clutter.EVENT_STOP;
                 }
-                if (type === Clutter.EventType.BUTTON_PRESS) {
-                    const [ex, ey] = event.get_coords();
-                    // 点击悬浮“译”按钮 -> 直接翻译新选区（不让抓取吃掉）
-                    if (this._button && this._button.visible) {
-                        const b = this._button.get_allocation_box();
-                        if (ex >= b.x1 && ex <= b.x2 &&
-                            ey >= b.y1 && ey <= b.y2) {
-                            const text = this._currentText;
-                            this._closePopup();
-                            this._hideButton();
-                            if (text)
-                                this._translate(text);
-                            return Clutter.EVENT_STOP;
-                        }
-                    }
-                    const alloc = this._popup
-                        ? this._popup.get_allocation_box() : null;
-                    if (alloc &&
-                        (ex < alloc.x1 || ex > alloc.x2 ||
-                         ey < alloc.y1 || ey > alloc.y2)) {
-                        console.error(
-                            'selection-translator: 点击卡片外部，关闭卡片');
-                        this._closePopup();
-                    }
-                    return Clutter.EVENT_PROPAGATE;
-                }
-                if (type === Clutter.EventType.SCROLL) {
-                    // 卡片外滚动 = 用户已继续阅读 -> 关闭；卡片内滚动放行
-                    const [ex, ey] = event.get_coords();
-                    const alloc = this._popup
-                        ? this._popup.get_allocation_box() : null;
-                    if (alloc &&
-                        (ex < alloc.x1 || ex > alloc.x2 ||
-                         ey < alloc.y1 || ey > alloc.y2)) {
-                        this._closePopup();
-                        return Clutter.EVENT_STOP;
-                    }
+                if (!target || !this._popup.contains(target)) {
+                    console.error(
+                        'selection-translator: 点击卡片外部，关闭卡片');
+                    this._closePopup();
                 }
                 return Clutter.EVENT_PROPAGATE;
-            });
+            }
+            if (type === Clutter.EventType.SCROLL) {
+                // 卡片外滚动 = 用户已继续阅读 -> 关闭；卡片内滚动放行
+                const target = global.stage.get_event_actor(event);
+                if (!target || !this._popup.contains(target)) {
+                    this._closePopup();
+                    return Clutter.EVENT_STOP;
+                }
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
 
         // 轮询选区：用户点击其他位置后选区被清空/改变 -> 关闭卡片
         this._stopPoll();
@@ -588,20 +579,17 @@ class SelectionTranslator {
         this._stopPoll();
         this._popupSource = null;
         this._popupTime = 0;
-        if (this._grabbed && this._popup) {
+        if (this._grab) {
             try {
-                Main.popModal(this._popup);
+                Main.popModal(this._grab);
             } catch (e) { /* 抓取可能已被系统解除 */ }
-            this._grabbed = false;
+            this._grab = null;
         }
         if (this._popupTimeout) {
             GLib.source_remove(this._popupTimeout);
             this._popupTimeout = 0;
         }
-        if (this._stageCaptureId) {
-            global.stage.disconnect(this._stageCaptureId);
-            this._stageCaptureId = 0;
-        }
+        // captured-event 挂在 popup 上，随 popup 销毁自动失效
         if (this._popup) {
             this._popup.destroy();
             this._popup = null;
