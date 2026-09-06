@@ -39,6 +39,7 @@ class SelectionTranslator {
         this._selId = 0;
         this._debounceId = 0;
         this._hideId = 0;
+        this._dormantId = 0;
         this._currentText = null;
         this._destroyed = false;
         this._loadConfig();
@@ -72,13 +73,26 @@ class SelectionTranslator {
     // ---------- 启用 / 禁用 ----------
     start() {
         this._destroyed = false;
-        // 登录时自动加载且未开启“开机启动”-> 休眠：不建托盘、不监听选区
+        // 登录时自动加载且未开启“开机启动”-> 休眠：不建托盘、不监听选区，
+        // 仅轮询启动标记文件，等待启动器唤醒
         if (!this._config.autostart && !this._manualStart) {
             console.error('selection-translator: 开机启动已关闭，本次休眠' +
                 '（可从应用列表「划词翻译」图标手动启动）');
+            this._armDormantWatch();
             return;
         }
+        this._fullStart();
+    }
+
+    _fullStart() {
+        this._destroyed = false;
         console.error('selection-translator: 扩展已启动');
+        // 清掉可能残留的启动标记
+        try {
+            GLib.unlink(GLib.build_filenamev(
+                [GLib.get_user_cache_dir(), 'selection-translator',
+                 'manual-start']));
+        } catch (e) { /* 忽略 */ }
 
         // 监听系统 PRIMARY 选区（即鼠标划选）
         this._selection = global.display.get_selection();
@@ -196,10 +210,55 @@ class SelectionTranslator {
     _quit() {
         console.error('selection-translator: 用户退出');
         this.stop();
+        // 回到休眠态：仍响应启动器唤醒
+        this._destroyed = false;
+        this._armDormantWatch();
+    }
+
+    // ---------- 休眠唤醒（监听启动标记文件） ----------
+    _armDormantWatch() {
+        this._cancelDormantWatch();
+        const flag = GLib.build_filenamev(
+            [GLib.get_user_cache_dir(), 'selection-translator',
+             'manual-start']);
+        const flagFile = Gio.File.new_for_path(flag);
+        this._dormantId = GLib.timeout_add(GLib.PRIORITY_LOW, 1000, () => {
+            if (this._destroyed) {
+                this._dormantId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
+            if (!GLib.file_test(flag, GLib.FileTest.EXISTS))
+                return GLib.SOURCE_CONTINUE;
+            // 丢弃 60 秒前的陈旧标记（防止上次会话残留导致意外唤醒）
+            try {
+                const info = flagFile.query_info(
+                    Gio.FILE_ATTRIBUTE_TIME_MODIFIED,
+                    Gio.FileQueryInfoFlags.NONE, null);
+                const age = GLib.get_real_time() / 1000000 -
+                    info.get_modification_date_time().to_unix();
+                if (age > 60) {
+                    GLib.unlink(flag);
+                    return GLib.SOURCE_CONTINUE;
+                }
+                GLib.unlink(flag);
+            } catch (e) { /* 忽略 */ }
+            this._dormantId = 0;
+            console.error('selection-translator: 启动器唤醒');
+            this._fullStart();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _cancelDormantWatch() {
+        if (this._dormantId) {
+            GLib.source_remove(this._dormantId);
+            this._dormantId = 0;
+        }
     }
 
     stop() {
         this._destroyed = true;
+        this._cancelDormantWatch();
         if (this._selId) {
             this._selection.disconnect(this._selId);
             this._selId = 0;
