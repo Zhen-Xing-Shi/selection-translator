@@ -26,6 +26,7 @@ class SelectionTranslator {
         this._config = {enabled: true, autoPopup: false};
         this._button = null;
         this._popup = null;
+        this._popupTime = 0;
         this._popupSource = null;   // 卡片对应的原文（用于检测选区变化）
         this._pollId = 0;
         this._indicator = null;
@@ -184,6 +185,18 @@ class SelectionTranslator {
     _checkSelection() {
         if (this._destroyed)
             return;
+        // 卡片打开期间出现新的选区事件（点击/重选触发），且指针在卡片外
+        // -> 用户已在别处操作，关闭卡片
+        if (this._popup && this._popupTime &&
+            (GLib.get_monotonic_time() - this._popupTime) > 800000) {
+            const alloc = this._popup.get_allocation_box();
+            const [px, py] = global.get_pointer();
+            if (px < alloc.x1 || px > alloc.x2 ||
+                py < alloc.y1 || py > alloc.y2) {
+                console.error('selection-translator: 新选区事件+指针在卡片外，关闭卡片');
+                this._closePopup();
+            }
+        }
         this._loadConfig();
         if (!this._config.enabled)
             return;
@@ -362,6 +375,7 @@ class SelectionTranslator {
         box.set_position(Math.max(monitor.x + 8, x), y);
 
         this._popup = box;
+        this._popupTime = GLib.get_monotonic_time();
         this._popupSource = (sourceText || '').replace(/\s+/g, ' ').trim();
         console.error('selection-translator: 卡片打开, source=' +
             this._popupSource.slice(0, 40));
@@ -517,6 +531,7 @@ class SelectionTranslator {
     _closePopup() {
         this._stopPoll();
         this._popupSource = null;
+        this._popupTime = 0;
         if (this._popupTimeout) {
             GLib.source_remove(this._popupTimeout);
             this._popupTimeout = 0;
