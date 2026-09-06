@@ -23,9 +23,11 @@ const MAX_TEXT_LEN = 1500;
 
 
 class SelectionTranslator {
-    constructor() {
+    constructor(uuid) {
+        this._uuid = uuid;
         this._config = {enabled: true, autoPopup: false};
         this._button = null;
+        this._buttonGrab = null;    // 按钮的指针级抓取（不影响键盘）
         this._popup = null;
         this._popupTime = 0;
         this._grab = null;
@@ -108,6 +110,24 @@ class SelectionTranslator {
                 this._armAutohide(1500);
             }
         });
+        // 指针级抓取期间：点击/滚动落在按钮外 -> 隐藏按钮
+        //（抓取仅针对指针，键盘不受影响，Ctrl+C 等正常）
+        this._button.connect('captured-event', (actor, event) => {
+            const type = event.type();
+            if (type === Clutter.EventType.BUTTON_PRESS ||
+                type === Clutter.EventType.TOUCH_BEGIN ||
+                type === Clutter.EventType.SCROLL) {
+                const target = global.stage.get_event_actor(event);
+                if (!target || !this._button.contains(target)) {
+                    console.error(
+                        'selection-translator: 点击/滚动在按钮外，隐藏按钮');
+                    this._hideButton();
+                    if (type === Clutter.EventType.SCROLL)
+                        return Clutter.EVENT_STOP;
+                }
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
 
         // 顶栏开关
         this._buildIndicator();
@@ -141,8 +161,28 @@ class SelectionTranslator {
         });
         this._indicator.menu.addMenuItem(autoItem);
 
+        this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const quitItem = new PopupMenu.PopupMenuItem(
+            '退出划词翻译（同时取消开机自启）');
+        quitItem.connect('activate', () => this._quit());
+        this._indicator.menu.addMenuItem(quitItem);
+
         Main.panel.addToStatusArea('selection-translator', this._indicator,
             1, 'right');
+    }
+
+    // 退出：从启用列表移除自身，shell 会立即停用本扩展，
+    // 之后也不会随登录自动加载；可通过应用列表里的“划词翻译”图标启动
+    _quit() {
+        try {
+            const settings = new Gio.Settings({schema_id: 'org.gnome.shell'});
+            const list = settings.get_strv('enabled-extensions');
+            settings.set_strv('enabled-extensions',
+                list.filter(u => u !== this._uuid));
+        } catch (e) {
+            console.error('selection-translator: 退出失败', e);
+        }
     }
 
     stop() {
@@ -162,6 +202,7 @@ class SelectionTranslator {
         this._cancelDebounce();
         this._cancelAutohide();
         this._closePopup();
+        this._releaseButtonGrab();
         if (this._button) {
             this._button.destroy();
             this._button = null;
@@ -240,10 +281,29 @@ class SelectionTranslator {
         by = Math.max(monitor.y, Math.min(by, monitor.y + monitor.height - bh));
         this._button.set_position(bx, by);
         this._button.show();
+        // 指针级抓取（不影响键盘）：让“点击按钮外”可被捕获。
+        // 已有其他抓取（如卡片/菜单）时不抢。
+        this._releaseButtonGrab();
+        try {
+            if (!global.stage.get_grab_actor())
+                this._buttonGrab = global.stage.grab(this._button);
+        } catch (e) {
+            this._buttonGrab = null;
+        }
         this._armAutohide(BTN_AUTOHIDE_MS);
     }
 
+    _releaseButtonGrab() {
+        if (this._buttonGrab) {
+            try {
+                this._buttonGrab.dismiss();
+            } catch (e) { /* 抓取可能已被系统解除 */ }
+            this._buttonGrab = null;
+        }
+    }
+
     _hideButton() {
+        this._releaseButtonGrab();
         if (this._button)
             this._button.hide();
         this._cancelAutohide();
@@ -593,7 +653,7 @@ class SelectionTranslator {
 
 export default class extends Extension {
     enable() {
-        this._impl = new SelectionTranslator();
+        this._impl = new SelectionTranslator(this.uuid);
         this._impl.start();
     }
 

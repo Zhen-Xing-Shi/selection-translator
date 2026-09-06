@@ -29,12 +29,22 @@
 - `enabled`：总开关（顶栏「译」菜单也可切换）
 - `autoPopup`：选中后直接弹结果（免点击按钮）
 
+## 启动 / 退出
+
+- 启动：应用列表（Show Apps）中的「划词翻译」图标，或执行
+  `gnome-extensions enable selection-translator@kimi`
+- 退出：顶栏「译」菜单 →「退出划词翻译（同时取消开机自启）」，
+  立即停止且不再随登录加载
+- 默认不随开机启动；若运行时直接关机未退出，下次登录仍会加载，
+  在面板菜单点一次「退出」即可
+
 ## 卸载
 
 ```bash
 gsettings reset org.gnome.shell enabled-extensions
 rm -rf ~/.local/share/gnome-shell/extensions/selection-translator@kimi \
-       ~/.local/share/selection-translator ~/.config/selection-translator
+       ~/.local/share/selection-translator ~/.config/selection-translator \
+       ~/.local/share/applications/selection-translator.desktop
 ```
 
 然后注销重新登录。

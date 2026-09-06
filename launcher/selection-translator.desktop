@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=划词翻译
+GenericName=Selection Translator
+Comment=选中文字后点击「译」翻译（单词音标+释义，整句翻译）
+Exec=gnome-extensions enable selection-translator@kimi
+Icon=accessories-dictionary
+Categories=Utility;Dictionary;
+Keywords=翻译;划词;词典;translate;dictionary;
+StartupNotify=false
