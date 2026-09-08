@@ -4,7 +4,6 @@ import Meta from 'gi://Meta';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
-import Shell from 'gi://Shell';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -20,6 +19,7 @@ const CONFIG_FILE = GLib.build_filenamev(
 const BTN_AUTOHIDE_MS = 6000;
 const HOVER_GRACE_MS = 400;
 const DEBOUNCE_MS = 250;
+const POINTER_WATCH_MS = 70;
 const MAX_TEXT_LEN = 1500;
 
 
@@ -29,13 +29,13 @@ class SelectionTranslator {
         this._manualStart = manualStart;   // 通过启动器手动启动
         this._config = {enabled: true, autoPopup: false, autostart: false};
         this._button = null;
-        this._buttonGrab = null;    // 按钮的指针级抓取（不影响键盘）
         this._popup = null;
         this._popupTime = 0;
-        this._grab = null;
         this._overviewId = 0;
         this._popupSource = null;   // 卡片对应的原文（用于检测选区变化）
         this._pollId = 0;
+        this._pointerWatchId = 0;   // 指针“按下沿”轮询（检测点击浮层外）
+        this._pointerWasDown = false;
         this._indicator = null;
         this._selId = 0;
         this._debounceId = 0;
@@ -112,7 +112,7 @@ class SelectionTranslator {
                 this._closePopup();
             });
 
-        // 打开概览时关闭卡片（避免抓取冲突）
+        // 打开概览时关闭卡片
         this._overviewId = Main.overview.connect('showing',
             () => this._closePopup());
 
@@ -130,39 +130,22 @@ class SelectionTranslator {
                 this._armAutohide(1500);
             }
         });
-        // 指针级抓取期间：点击/滚动落在按钮外 -> 隐藏按钮；
-        // 指针移入按钮 -> 悬停翻译（直接按指针坐标判断，比 hover 穿越
-        // 事件在抓取状态下更可靠）。抓取仅针对指针，Ctrl+C 等不受影响。
+        // 悬停即翻译：按指针坐标判断移入。本扩展不做任何指针/键盘抓取，
+        // 事件全部原生送达应用（点击取消选区、Ctrl+C 等均不受影响）；
+        // “点击浮层外”由 _armPointerWatch 轮询检测。
         this._button.connect('captured-event', (actor, event) => {
-            const type = event.type();
-            if (type === Clutter.EventType.MOTION) {
-                // 悬停即翻译：忽略刚弹出的一小段时间（屏幕边缘钳位可能
-                // 让按钮正好出现在光标下方，避免一弹出就误触发）
-                if (this._button.visible &&
-                    GLib.get_monotonic_time() - this._buttonShowTime >
-                        HOVER_GRACE_MS * 1000) {
-                    const alloc = this._button.get_allocation_box();
-                    const [px, py] = global.get_pointer();
-                    if (px >= alloc.x1 && px <= alloc.x2 &&
-                        py >= alloc.y1 && py <= alloc.y2)
-                        this._triggerButton();
-                }
+            if (event.type() !== Clutter.EventType.MOTION)
                 return Clutter.EVENT_PROPAGATE;
-            }
-            if (type === Clutter.EventType.BUTTON_PRESS ||
-                type === Clutter.EventType.TOUCH_BEGIN ||
-                type === Clutter.EventType.SCROLL) {
-                const target = global.stage.get_event_actor(event);
-                if (!target || !this._button.contains(target)) {
-                    console.error(
-                        'selection-translator: 点击/滚动在按钮外，隐藏按钮');
-                    this._hideButton();
-                    if (type === Clutter.EventType.SCROLL)
-                        return Clutter.EVENT_STOP;
-                    // 点击/触摸在按钮外：一并取消应用内的文本高亮
-                    //（滚动不取消：滚动本来就不会清除选区）
-                    this._clearPrimary();
-                }
+            // 忽略刚弹出的一小段时间（屏幕边缘钳位可能让按钮正好
+            // 出现在光标下方，避免一弹出就误触发）
+            if (this._button.visible &&
+                GLib.get_monotonic_time() - this._buttonShowTime >
+                    HOVER_GRACE_MS * 1000) {
+                const alloc = this._button.get_allocation_box();
+                const [px, py] = global.get_pointer();
+                if (px >= alloc.x1 && px <= alloc.x2 &&
+                    py >= alloc.y1 && py <= alloc.y2)
+                    this._triggerButton();
             }
             return Clutter.EVENT_PROPAGATE;
         });
@@ -290,7 +273,7 @@ class SelectionTranslator {
         this._cancelDebounce();
         this._cancelAutohide();
         this._closePopup();
-        this._releaseButtonGrab();
+        this._cancelPointerWatch();
         if (this._button) {
             this._button.destroy();
             this._button = null;
@@ -322,9 +305,8 @@ class SelectionTranslator {
     _checkSelection() {
         if (this._destroyed)
             return;
-        // 拖拽选区进行中（鼠标键仍按住）：延后到松手后再处理。
-        // 否则悬浮按钮会在拖动中途弹出，其指针抓取会打断应用内的拖拽
-        // （选区“卡住”），还会让之后落在应用上的点击被当成扩展选区。
+        // 拖拽选区进行中（鼠标键仍按住）：延后到松手后再处理，
+        // 避免悬浮按钮在拖动中途弹出干扰拖拽。
         const [, , mods] = global.get_pointer();
         if (mods & (Clutter.ModifierType.BUTTON1_MASK |
                     Clutter.ModifierType.BUTTON2_MASK |
@@ -377,6 +359,8 @@ class SelectionTranslator {
 
     // ---------- 悬浮按钮 ----------
     _triggerButton() {
+        if (!this._button || !this._button.visible)
+            return;
         const text = this._currentText;
         this._hideButton();
         if (text)
@@ -393,32 +377,83 @@ class SelectionTranslator {
         this._button.set_position(bx, by);
         this._buttonShowTime = GLib.get_monotonic_time();
         this._button.show();
-        // 指针级抓取（不影响键盘）：让“点击按钮外”可被捕获。
-        // 已有其他抓取（如卡片/菜单）时不抢。
-        this._releaseButtonGrab();
-        try {
-            if (!global.stage.get_grab_actor())
-                this._buttonGrab = global.stage.grab(this._button);
-        } catch (e) {
-            this._buttonGrab = null;
-        }
+        this._armPointerWatch();
         this._armAutohide(BTN_AUTOHIDE_MS);
     }
 
-    _releaseButtonGrab() {
-        if (this._buttonGrab) {
-            try {
-                this._buttonGrab.dismiss();
-            } catch (e) { /* 抓取可能已被系统解除 */ }
-            this._buttonGrab = null;
-        }
-    }
-
     _hideButton() {
-        this._releaseButtonGrab();
         if (this._button)
             this._button.hide();
         this._cancelAutohide();
+    }
+
+    // ---------- 指针“按下沿”监听（无抓取，事件原生送达应用） ----------
+    // 轮询指针按键状态：按下瞬间判断落点——
+    //   落在按钮/卡片内：交给控件自身处理
+    //   落在外部：隐藏按钮/关闭卡片；左键同时清除 PRIMARY 取消高亮
+    // 点击本身应用照收（取消选区、移动光标、切换焦点均正常），
+    // 键盘完全自由（Ctrl+C 可用）。
+    _armPointerWatch() {
+        if (this._pointerWatchId)
+            return;
+        // 以当前真实按键状态为基准，避免武装瞬间产生假的“按下沿”
+        const [, , m] = global.get_pointer();
+        this._pointerWasDown = (m & (Clutter.ModifierType.BUTTON1_MASK |
+            Clutter.ModifierType.BUTTON2_MASK |
+            Clutter.ModifierType.BUTTON3_MASK)) !== 0;
+        this._pointerWatchId = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, POINTER_WATCH_MS, () => {
+                const hasOverlay =
+                    (this._button && this._button.visible) || this._popup;
+                if (this._destroyed || !hasOverlay) {
+                    this._pointerWatchId = 0;
+                    return GLib.SOURCE_REMOVE;
+                }
+                const [px, py, mods] = global.get_pointer();
+                const down = (mods & (Clutter.ModifierType.BUTTON1_MASK |
+                    Clutter.ModifierType.BUTTON2_MASK |
+                    Clutter.ModifierType.BUTTON3_MASK)) !== 0;
+                if (down && !this._pointerWasDown) {
+                    this._pointerWasDown = true;
+                    this._onPointerPress(px, py,
+                        (mods & Clutter.ModifierType.BUTTON1_MASK) !== 0);
+                } else if (!down) {
+                    this._pointerWasDown = false;
+                }
+                return GLib.SOURCE_CONTINUE;
+            });
+    }
+
+    _cancelPointerWatch() {
+        if (this._pointerWatchId) {
+            GLib.source_remove(this._pointerWatchId);
+            this._pointerWatchId = 0;
+        }
+    }
+
+    _onPointerPress(x, y, isLeft) {
+        if (this._button && this._button.visible) {
+            const b = this._button.get_allocation_box();
+            if (x >= b.x1 && x <= b.x2 && y >= b.y1 && y <= b.y2)
+                return;   // 落在按钮上：hover/clicked 会触发翻译
+        }
+        if (this._popup) {
+            const p = this._popup.get_allocation_box();
+            if (x >= p.x1 && x <= p.x2 && y >= p.y1 && y <= p.y2)
+                return;   // 落在卡片上：卡片按钮自行处理
+        }
+        if (this._button && this._button.visible) {
+            console.error('selection-translator: 按下在按钮外，隐藏按钮');
+            this._hideButton();
+        }
+        if (this._popup) {
+            console.error('selection-translator: 按下在卡片外，关闭卡片');
+            this._closePopup();
+        }
+        // 仅左键清除选区高亮：右键要保留下文菜单的“复制”，
+        // 中键粘贴依赖 PRIMARY，都不能动
+        if (isLeft)
+            this._clearPrimary();
     }
 
     _armAutohide(ms) {
@@ -556,65 +591,9 @@ class SelectionTranslator {
         console.error('selection-translator: 卡片打开, source=' +
             this._popupSource.slice(0, 40));
 
-        // 模态抓取：让 shell 能捕获落在任意应用窗口内的点击/按键
-        //（与 GNOME 弹出菜单同款机制，Wayland 下检测“点击卡片外部”的唯一
-        //  可靠途径）。注意：pushModal 返回 Grab 对象，popModal 必须传它。
-        this._grab = null;
-        try {
-            this._grab = Main.pushModal(this._popup,
-                {actionMode: Shell.ActionMode.POPUP});
-        } catch (e) {
-            this._grab = null;
-        }
-        console.error('selection-translator: 模态抓取=' + !!this._grab);
-
-        // 事件捕获必须挂在被抓取的 actor 自己身上（GNOME 菜单同款写法），
-        // 用 get_event_actor 判断事件真实目标
-        this._popup.connect('captured-event', (actor, event) => {
-            const type = event.type();
-            if (type === Clutter.EventType.KEY_PRESS) {
-                const sym = event.get_key_symbol();
-                // Super 键放行（用户可能想开概览）
-                this._closePopup();
-                if (sym === Clutter.KEY_Super_L ||
-                    sym === Clutter.KEY_Super_R)
-                    return Clutter.EVENT_PROPAGATE;
-                console.error('selection-translator: 按键，关闭卡片');
-                return Clutter.EVENT_STOP;
-            }
-            if (type === Clutter.EventType.BUTTON_PRESS ||
-                type === Clutter.EventType.TOUCH_BEGIN) {
-                const target = global.stage.get_event_actor(event);
-                // 点击悬浮“译”按钮 -> 直接翻译新选区（不让抓取吃掉）
-                if (target && this._button && this._button.visible &&
-                    (target === this._button ||
-                     this._button.contains(target))) {
-                    const text = this._currentText;
-                    this._closePopup();
-                    this._hideButton();
-                    if (text)
-                        this._translate(text);
-                    return Clutter.EVENT_STOP;
-                }
-                if (!target || !this._popup.contains(target)) {
-                    console.error(
-                        'selection-translator: 点击卡片外部，关闭卡片');
-                    this._closePopup();
-                    // 一并取消应用内的文本高亮
-                    this._clearPrimary();
-                }
-                return Clutter.EVENT_PROPAGATE;
-            }
-            if (type === Clutter.EventType.SCROLL) {
-                // 卡片外滚动 = 用户已继续阅读 -> 关闭；卡片内滚动放行
-                const target = global.stage.get_event_actor(event);
-                if (!target || !this._popup.contains(target)) {
-                    this._closePopup();
-                    return Clutter.EVENT_STOP;
-                }
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
+        // 不做模态抓取（抓取会吞掉键盘，Ctrl+C 等被卡死）。
+        // “点击卡片外”由指针按下沿轮询检测，事件原生送达应用。
+        this._armPointerWatch();
 
         // 轮询选区：用户点击其他位置后选区被清空/改变 -> 关闭卡片
         this._stopPoll();
@@ -636,7 +615,7 @@ class SelectionTranslator {
             return GLib.SOURCE_CONTINUE;
         });
 
-        // 结果弹窗 20 秒无操作自动关闭（抓取会接管键盘，不宜过长）
+        // 结果弹窗 20 秒无操作自动关闭
         this._popupTimeout = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT, 20000, () => {
                 this._popupTimeout = 0;
@@ -749,9 +728,17 @@ class SelectionTranslator {
     // 注意：不影响 CLIPBOARD（Ctrl+C 的内容还在）。
     _clearPrimary() {
         try {
-            St.Clipboard.get_default().set_text(
-                St.ClipboardType.PRIMARY, '');
-            console.error('selection-translator: 已接管 PRIMARY，取消文本高亮');
+            const sel = global.display.get_selection();
+            if (sel.unset_owner) {
+                // 最贴近原生“取消选中”：PRIMARY 变无所有者
+                sel.unset_owner(Meta.SelectionType.SELECTION_PRIMARY);
+                console.error('selection-translator: 已撤销 PRIMARY 所有者，取消高亮');
+            } else {
+                // 兜底：以空格内容接管 PRIMARY（空字符串会被忽略，不转移所有权）
+                St.Clipboard.get_default().set_text(
+                    St.ClipboardType.PRIMARY, ' ');
+                console.error('selection-translator: 已接管 PRIMARY(空格)，取消高亮');
+            }
         } catch (e) {
             console.error('selection-translator: 清除 PRIMARY 选区失败', e);
         }
@@ -761,17 +748,10 @@ class SelectionTranslator {
         this._stopPoll();
         this._popupSource = null;
         this._popupTime = 0;
-        if (this._grab) {
-            try {
-                Main.popModal(this._grab);
-            } catch (e) { /* 抓取可能已被系统解除 */ }
-            this._grab = null;
-        }
         if (this._popupTimeout) {
             GLib.source_remove(this._popupTimeout);
             this._popupTimeout = 0;
         }
-        // captured-event 挂在 popup 上，随 popup 销毁自动失效
         if (this._popup) {
             this._popup.destroy();
             this._popup = null;
