@@ -18,6 +18,7 @@ const CONFIG_FILE = GLib.build_filenamev(
     [GLib.get_home_dir(), '.config', 'selection-translator', 'config.json']);
 
 const BTN_AUTOHIDE_MS = 6000;
+const HOVER_GRACE_MS = 400;
 const DEBOUNCE_MS = 250;
 const MAX_TEXT_LEN = 1500;
 
@@ -42,6 +43,7 @@ class SelectionTranslator {
         this._dormantId = 0;
         this._currentText = null;
         this._dragDeferLogged = false;
+        this._buttonShowTime = 0;
         this._destroyed = false;
         this._loadConfig();
     }
@@ -120,12 +122,7 @@ class SelectionTranslator {
             visible: false, reactive: true, can_focus: false,
         });
         Main.layoutManager.uiGroup.add_child(this._button);
-        this._button.connect('clicked', () => {
-            const text = this._currentText;
-            this._hideButton();
-            if (text)
-                this._translate(text);
-        });
+        this._button.connect('clicked', () => this._triggerButton());
         this._button.connect('notify::hover', () => {
             if (this._button.hover) {
                 this._cancelAutohide();
@@ -133,10 +130,25 @@ class SelectionTranslator {
                 this._armAutohide(1500);
             }
         });
-        // 指针级抓取期间：点击/滚动落在按钮外 -> 隐藏按钮
-        //（抓取仅针对指针，键盘不受影响，Ctrl+C 等正常）
+        // 指针级抓取期间：点击/滚动落在按钮外 -> 隐藏按钮；
+        // 指针移入按钮 -> 悬停翻译（直接按指针坐标判断，比 hover 穿越
+        // 事件在抓取状态下更可靠）。抓取仅针对指针，Ctrl+C 等不受影响。
         this._button.connect('captured-event', (actor, event) => {
             const type = event.type();
+            if (type === Clutter.EventType.MOTION) {
+                // 悬停即翻译：忽略刚弹出的一小段时间（屏幕边缘钳位可能
+                // 让按钮正好出现在光标下方，避免一弹出就误触发）
+                if (this._button.visible &&
+                    GLib.get_monotonic_time() - this._buttonShowTime >
+                        HOVER_GRACE_MS * 1000) {
+                    const alloc = this._button.get_allocation_box();
+                    const [px, py] = global.get_pointer();
+                    if (px >= alloc.x1 && px <= alloc.x2 &&
+                        py >= alloc.y1 && py <= alloc.y2)
+                        this._triggerButton();
+                }
+                return Clutter.EVENT_PROPAGATE;
+            }
             if (type === Clutter.EventType.BUTTON_PRESS ||
                 type === Clutter.EventType.TOUCH_BEGIN ||
                 type === Clutter.EventType.SCROLL) {
@@ -361,6 +373,13 @@ class SelectionTranslator {
     }
 
     // ---------- 悬浮按钮 ----------
+    _triggerButton() {
+        const text = this._currentText;
+        this._hideButton();
+        if (text)
+            this._translate(text);
+    }
+
     _showButton() {
         const [x, y] = global.get_pointer();
         const monitor = Main.layoutManager.currentMonitor;
@@ -369,6 +388,7 @@ class SelectionTranslator {
         bx = Math.max(monitor.x, Math.min(bx, monitor.x + monitor.width - bw));
         by = Math.max(monitor.y, Math.min(by, monitor.y + monitor.height - bh));
         this._button.set_position(bx, by);
+        this._buttonShowTime = GLib.get_monotonic_time();
         this._button.show();
         // 指针级抓取（不影响键盘）：让“点击按钮外”可被捕获。
         // 已有其他抓取（如卡片/菜单）时不抢。
