@@ -159,6 +159,9 @@ class SelectionTranslator {
                     this._hideButton();
                     if (type === Clutter.EventType.SCROLL)
                         return Clutter.EVENT_STOP;
+                    // 点击/触摸在按钮外：一并取消应用内的文本高亮
+                    //（滚动不取消：滚动本来就不会清除选区）
+                    this._clearPrimary();
                 }
             }
             return Clutter.EVENT_PROPAGATE;
@@ -597,6 +600,8 @@ class SelectionTranslator {
                     console.error(
                         'selection-translator: 点击卡片外部，关闭卡片');
                     this._closePopup();
+                    // 一并取消应用内的文本高亮
+                    this._clearPrimary();
                 }
                 return Clutter.EVENT_PROPAGATE;
             }
@@ -735,6 +740,20 @@ class SelectionTranslator {
         if (this._pollId) {
             GLib.source_remove(this._pollId);
             this._pollId = 0;
+        }
+    }
+
+    // 取消应用内的文本高亮：由 shell 以空内容接管 PRIMARY 选区，
+    // 原所有者收到“选区被夺走”的通知后会自行移除高亮
+    //（GTK/Qt/浏览器/终端均遵守该机制）。
+    // 注意：不影响 CLIPBOARD（Ctrl+C 的内容还在）。
+    _clearPrimary() {
+        try {
+            St.Clipboard.get_default().set_text(
+                St.ClipboardType.PRIMARY, '');
+            console.error('selection-translator: 已接管 PRIMARY，取消文本高亮');
+        } catch (e) {
+            console.error('selection-translator: 清除 PRIMARY 选区失败', e);
         }
     }
 
