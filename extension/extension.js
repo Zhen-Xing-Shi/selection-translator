@@ -41,6 +41,7 @@ class SelectionTranslator {
         this._hideId = 0;
         this._dormantId = 0;
         this._currentText = null;
+        this._dragDeferLogged = false;
         this._destroyed = false;
         this._loadConfig();
     }
@@ -306,6 +307,22 @@ class SelectionTranslator {
     _checkSelection() {
         if (this._destroyed)
             return;
+        // 拖拽选区进行中（鼠标键仍按住）：延后到松手后再处理。
+        // 否则悬浮按钮会在拖动中途弹出，其指针抓取会打断应用内的拖拽
+        // （选区“卡住”），还会让之后落在应用上的点击被当成扩展选区。
+        const [, , mods] = global.get_pointer();
+        if (mods & (Clutter.ModifierType.BUTTON1_MASK |
+                    Clutter.ModifierType.BUTTON2_MASK |
+                    Clutter.ModifierType.BUTTON3_MASK)) {
+            if (!this._dragDeferLogged) {
+                this._dragDeferLogged = true;
+                console.error(
+                    'selection-translator: 拖拽选区进行中，延迟到松手后检测');
+            }
+            this._scheduleCheck();
+            return;
+        }
+        this._dragDeferLogged = false;
         // 卡片打开期间出现新的选区事件（点击/重选触发），且指针在卡片外
         // -> 用户已在别处操作，关闭卡片
         if (this._popup && this._popupTime &&
