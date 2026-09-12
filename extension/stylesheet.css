@@ -71,3 +71,44 @@
     font-size: 13px;
     font-weight: bold;
 }
+
+/* ---------- 暗黑模式 ---------- */
+.st-btn.st-dark {
+    background-color: #242424;
+    color: #e8e8e8;
+    border: 1px solid #454545;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+.st-btn.st-dark:hover {
+    background-color: #3a3a3a;
+}
+
+.st-popup.st-dark {
+    background-color: #242424;
+    color: #e8e8e8;
+    border: 1px solid #454545;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+}
+.st-popup.st-dark .st-popup-word {
+    color: #f2f2f2;
+}
+.st-popup.st-dark .st-popup-phonetic {
+    color: #9a9a9a;
+}
+.st-popup.st-dark .st-popup-line {
+    color: #e8e8e8;
+}
+.st-popup.st-dark .st-popup-src,
+.st-popup.st-dark .st-popup-dim {
+    color: #9a9a9a;
+}
+.st-popup.st-dark .st-popup-sep {
+    background-color: #454545;
+}
+.st-popup.st-dark .st-popup-btn {
+    background-color: #3a3a3a;
+    color: #e8e8e8;
+}
+.st-popup.st-dark .st-popup-btn:hover {
+    background-color: #4a4a4a;
+}

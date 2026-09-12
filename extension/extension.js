@@ -27,7 +27,8 @@ class SelectionTranslator {
     constructor(uuid, manualStart) {
         this._uuid = uuid;
         this._manualStart = manualStart;   // 通过启动器手动启动
-        this._config = {enabled: true, autoPopup: false, autostart: false};
+        this._config = {enabled: true, autoPopup: false, autostart: false,
+            darkMode: false};
         this._button = null;
         this._popup = null;
         this._popupTime = 0;
@@ -55,7 +56,8 @@ class SelectionTranslator {
             if (ok) {
                 const cfg = JSON.parse(new TextDecoder().decode(bytes));
                 this._config = Object.assign(
-                    {enabled: true, autoPopup: false, autostart: false},
+                    {enabled: true, autoPopup: false, autostart: false,
+                        darkMode: false},
                     cfg);
             }
         } catch (e) {
@@ -70,6 +72,19 @@ class SelectionTranslator {
                 JSON.stringify(this._config, null, 2));
         } catch (e) {
             console.error('selection-translator: 保存配置失败', e);
+        }
+    }
+
+    // ---------- 暗黑模式 ----------
+    _applyTheme() {
+        const dark = !!this._config.darkMode;
+        for (const actor of [this._button, this._popup]) {
+            if (!actor)
+                continue;
+            if (dark)
+                actor.add_style_class_name('st-dark');
+            else
+                actor.remove_style_class_name('st-dark');
         }
     }
 
@@ -121,6 +136,7 @@ class SelectionTranslator {
             style_class: 'st-btn', label: '译',
             visible: false, reactive: true, can_focus: false,
         });
+        this._applyTheme();
         Main.layoutManager.uiGroup.add_child(this._button);
         this._button.connect('clicked', () => this._triggerButton());
         this._button.connect('notify::hover', () => {
@@ -181,6 +197,16 @@ class SelectionTranslator {
             this._saveConfig();
         });
         this._indicator.menu.addMenuItem(autoItem);
+
+        // 暗黑模式开关：即时应用到悬浮按钮和释义卡片
+        const darkItem = new PopupMenu.PopupSwitchMenuItem(
+            '暗黑模式', this._config.darkMode);
+        darkItem.connect('toggled', item => {
+            this._config.darkMode = item.state;
+            this._saveConfig();
+            this._applyTheme();
+        });
+        this._indicator.menu.addMenuItem(darkItem);
 
         this._indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
@@ -535,6 +561,10 @@ class SelectionTranslator {
         const box = new St.BoxLayout({
             vertical: true, style_class: 'st-popup', reactive: true,
         });
+        this._loadConfig();
+        this._applyTheme();
+        if (this._config.darkMode)
+            box.add_style_class_name('st-dark');
 
         if (data && data.kind === 'word') {
             this._fillWord(box, data);

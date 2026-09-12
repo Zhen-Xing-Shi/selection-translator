@@ -24,12 +24,13 @@
 `~/.config/selection-translator/config.json`：
 
 ```json
-{"enabled": true, "autoPopup": false, "autostart": false}
+{"enabled": true, "autoPopup": false, "autostart": false, "darkMode": false}
 ```
 
 - `enabled`：总开关（顶栏「译」菜单也可切换）
 - `autoPopup`：选中后直接弹结果（免悬停按钮）
 - `autostart`：开机启动（面板菜单开关）
+- `darkMode`：暗黑模式（面板菜单开关；on 时「译」按钮和释义卡片为深色）
 
 ## 启动 / 退出 / 开机启动
 
