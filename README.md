@@ -16,9 +16,6 @@
   安装到 `~/.local/share/gnome-shell/extensions/selection-translator@kimi/`
 - `helper/translate.py` — 翻译引擎（本地词库 + 在线接口），
   安装到 `~/.local/share/selection-translator/translate.py`
-- `icons/selection-translator.svg` — 应用图标（蓝色底、黄色划词高亮 + 鼠标光标 +
-  「文」释义气泡），随 `launcher/selection-translator.desktop` 安装到
-  `~/.local/share/icons/hicolor/scalable/apps/`
 - 词库 `ecdict.db` 来源于 [ECDICT](https://github.com/skywind3000/ECDICT)
   （`ecdict-sqlite-28.zip`，约 800MB，不入库），放入
   `~/.local/share/selection-translator/` 后执行一次
@@ -51,8 +48,7 @@
 gsettings reset org.gnome.shell enabled-extensions
 rm -rf ~/.local/share/gnome-shell/extensions/selection-translator@kimi \
        ~/.local/share/selection-translator ~/.config/selection-translator \
-       ~/.local/share/applications/selection-translator.desktop \
-       ~/.local/share/icons/hicolor/scalable/apps/selection-translator.svg
+       ~/.local/share/applications/selection-translator.desktop
 ```
 
 然后注销重新登录。
