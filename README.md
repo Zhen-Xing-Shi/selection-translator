@@ -12,10 +12,15 @@
 
 ## 组成
 
-- `extension/` — GNOME Shell 扩展（划词检测、悬浮按钮、结果卡片），
+- `extension/` — GNOME Shell 扩展（划词检测、悬浮按钮、结果卡片、顶栏图标），
   安装到 `~/.local/share/gnome-shell/extensions/selection-translator@kimi/`
 - `helper/translate.py` — 翻译引擎（本地词库 + 在线接口），
   安装到 `~/.local/share/selection-translator/translate.py`
+- `icons/selection-translator.svg` — 应用图标（橙色放大镜），应用列表和顶栏
+  托盘共用；安装到 `~/.local/share/icons/hicolor/scalable/apps/`。
+  扩展按该路径读取图标，文件缺失时顶栏退回文字「译」
+- `launcher/selection-translator.desktop` — 应用列表启动项，
+  安装到 `~/.local/share/applications/`
 - 词库 `ecdict.db` 来源于 [ECDICT](https://github.com/skywind3000/ECDICT)
   （`ecdict-sqlite-28.zip`，约 800MB，不入库），放入
   `~/.local/share/selection-translator/` 后执行一次
@@ -29,7 +34,7 @@
 {"enabled": true, "autoPopup": false, "autostart": false, "darkMode": false}
 ```
 
-- `enabled`：总开关（顶栏「译」菜单也可切换）
+- `enabled`：总开关（顶栏图标菜单也可切换）
 - `autoPopup`：选中后直接弹结果（免悬停按钮）
 - `autostart`：开机启动（面板菜单开关）
 - `darkMode`：暗色模式（面板菜单开关；on 时「译」按钮和释义卡片为深色）
@@ -38,8 +43,8 @@
 
 - 启动：应用列表（Show Apps）中的「划词翻译」图标，或执行
   `~/.local/share/selection-translator/start.sh`
-- 退出：顶栏「译」菜单 →「退出」（停止当前运行，不影响开机启动开关）
-- 开机启动：顶栏「译」菜单 →「开机启动」开关；off 时登录后扩展休眠
+- 退出：顶栏图标菜单 →「退出」（停止当前运行，不影响开机启动开关）
+- 开机启动：顶栏图标菜单 →「开机启动」开关；off 时登录后扩展休眠
   （不显示托盘、不监听选区），可随时用启动图标唤醒
 
 ## 卸载
@@ -48,7 +53,8 @@
 gsettings reset org.gnome.shell enabled-extensions
 rm -rf ~/.local/share/gnome-shell/extensions/selection-translator@kimi \
        ~/.local/share/selection-translator ~/.config/selection-translator \
-       ~/.local/share/applications/selection-translator.desktop
+       ~/.local/share/applications/selection-translator.desktop \
+       ~/.local/share/icons/hicolor/scalable/apps/selection-translator.svg
 ```
 
 然后注销重新登录。

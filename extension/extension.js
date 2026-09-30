@@ -16,11 +16,33 @@ const HELPER = GLib.build_filenamev(
 const CONFIG_FILE = GLib.build_filenamev(
     [GLib.get_home_dir(), '.config', 'selection-translator', 'config.json']);
 
+// 顶栏图标：与应用列表（应用抽屉）共用同一个 SVG，见 icons/
+const PANEL_ICON_FILE = 'selection-translator.svg';
+const PANEL_ICON_SIZE = 16;
+
 const BTN_AUTOHIDE_MS = 6000;
 const HOVER_GRACE_MS = 400;
 const DEBOUNCE_MS = 250;
 const POINTER_WATCH_MS = 70;
 const MAX_TEXT_LEN = 1500;
+
+
+// 找已安装的图标文件（用户图标主题优先，其次系统目录）
+function findPanelIcon() {
+    const candidates = [
+        GLib.build_filenamev([GLib.get_user_data_dir(), 'icons', 'hicolor',
+            'scalable', 'apps', PANEL_ICON_FILE]),
+        GLib.build_filenamev(['/usr/share/icons/hicolor/scalable/apps',
+            PANEL_ICON_FILE]),
+    ];
+    for (const path of candidates) {
+        try {
+            if (GLib.file_test(path, GLib.FileTest.EXISTS))
+                return path;
+        } catch (e) { /* 忽略 */ }
+    }
+    return null;
+}
 
 
 class SelectionTranslator {
@@ -172,11 +194,21 @@ class SelectionTranslator {
 
     _buildIndicator() {
         this._indicator = new PanelMenu.Button(0.5, '划词翻译', false);
-        const label = new St.Label({
-            text: '译', style_class: 'st-panel-label', y_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        this._indicator.add_child(label);
+        // 顶栏图标：与应用抽屉同一个 SVG；图标未安装时退回文字「译」
+        const iconPath = findPanelIcon();
+        if (iconPath) {
+            this._indicator.add_child(new St.Icon({
+                gicon: Gio.icon_new_for_string(iconPath),
+                icon_size: PANEL_ICON_SIZE,
+                style_class: 'st-panel-icon',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        } else {
+            this._indicator.add_child(new St.Label({
+                text: '译', style_class: 'st-panel-label', y_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        }
 
         this._switchItem = new PopupMenu.PopupSwitchMenuItem(
             '启用划词翻译', this._config.enabled);

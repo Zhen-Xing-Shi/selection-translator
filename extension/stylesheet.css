@@ -78,6 +78,11 @@
     font-weight: bold;
 }
 
+/* 顶栏托盘图标（与应用抽屉同一个 SVG，橙色放大镜） */
+.st-panel-icon {
+    icon-size: 16px;
+}
+
 /* ---------- 暗色模式 ---------- */
 .st-btn.st-dark {
     background-color: #242424;
