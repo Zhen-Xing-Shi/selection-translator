@@ -18,7 +18,9 @@
   安装到 `~/.local/share/selection-translator/translate.py`
 - `icons/selection-translator.svg` — 应用图标（橙色放大镜），应用列表和顶栏
   托盘共用；安装到 `~/.local/share/icons/hicolor/scalable/apps/`。
-  扩展按该路径读取图标，文件缺失时顶栏退回文字「译」
+  扩展按该路径读取图标，文件缺失时顶栏退回文字「译」。
+  改这个文件时注意：`<svg>` 必须出现在文件前 256 字节内（加载器只嗅探这么长），
+  说明性注释请写在文件末尾，否则图标会整个无法识别
 - `launcher/selection-translator.desktop` — 应用列表启动项，
   安装到 `~/.local/share/applications/`
 - 词库 `ecdict.db` 来源于 [ECDICT](https://github.com/skywind3000/ECDICT)
