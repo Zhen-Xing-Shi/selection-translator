@@ -607,10 +607,11 @@ class SelectionTranslator {
         topRow.add_child(closeBtn);
         box.add_child(topRow);
 
+        let scroll = null;
         if (data && data.kind === 'word') {
-            this._fillWord(headBox, box, data);
+            scroll = this._fillWord(headBox, box, data);
         } else if (data && data.kind === 'sentence') {
-            this._fillSentence(headBox, box, data);
+            scroll = this._fillSentence(headBox, box, data);
         } else {
             // 加载中 / 错误提示
             headBox.add_child(this._label(title || '提示', 'st-popup-word'));
@@ -620,17 +621,44 @@ class SelectionTranslator {
 
         Main.layoutManager.uiGroup.add_child(box);
 
-        // 定位：跟随鼠标，避免超出屏幕
+        // 定位：跟随鼠标；任一方向越界时翻转到光标另一侧，
+        // 再向屏幕内钳位，保证卡片内容完整可见
         const [px, py] = global.get_pointer();
         const monitor = Main.layoutManager.currentMonitor;
-        let x = px + 14, y = py + 18;
-        const [, natW] = box.get_preferred_width(-1);
-        const [, natH] = box.get_preferred_height(-1);
-        if (x + natW > monitor.x + monitor.width)
-            x = monitor.x + monitor.width - natW - 8;
-        if (y + natH > monitor.y + monitor.height)
-            y = Math.max(monitor.y + 8, py - natH - 12);
-        box.set_position(Math.max(monitor.x + 8, x), y);
+        const margin = 8;
+        const availW = monitor.width - margin * 2;
+        const availH = monitor.height - margin * 2;
+        // 高度必须按实际宽度测量：for_width=-1 时标签按不换行计算，
+        // 比受 max-width 约束换行后的真实渲染高度小，底部越界检测会失效
+        const [, prefW] = box.get_preferred_width(-1);
+        const w = Math.min(prefW, availW);
+        if (prefW > availW)
+            box.set_width(availW);
+        let [, prefH] = box.get_preferred_height(w);
+        if (prefH > availH && scroll) {
+            // 极端情况：内容比屏幕还高，压缩滚动区高度让卡片整体放下
+            const [, sh] = scroll.get_preferred_height(w);
+            const newMax = Math.max(120, sh - (prefH - availH));
+            scroll.set_style(`max-height: ${Math.floor(newMax)}px;`);
+            [, prefH] = box.get_preferred_height(w);
+        }
+        const h = Math.min(prefH, availH);
+
+        // 水平：默认弹在光标右侧；右越界则翻到光标左侧；仍越界则贴边钳位
+        let x = px + 14;
+        if (x + w > monitor.x + monitor.width - margin)
+            x = px - w - 10;
+        x = Math.max(monitor.x + margin,
+            Math.min(x, monitor.x + monitor.width - margin - w));
+
+        // 垂直：默认弹在光标下方；下越界则翻到光标上方；仍越界则贴边钳位
+        let y = py + 18;
+        if (y + h > monitor.y + monitor.height - margin)
+            y = py - h - 12;
+        y = Math.max(monitor.y + margin,
+            Math.min(y, monitor.y + monitor.height - margin - h));
+
+        box.set_position(Math.round(x), Math.round(y));
 
         this._popup = box;
         this._popupTime = GLib.get_monotonic_time();
@@ -715,6 +743,7 @@ class SelectionTranslator {
         }
         scroll.set_child(inner);
         box.add_child(scroll);
+        return scroll;
     }
 
     _fillSentence(headBox, box, d) {
@@ -731,6 +760,7 @@ class SelectionTranslator {
         const engine = {youdao: '有道', mymemory: 'MyMemory'}[d.engine] ||
             d.engine || '';
         box.add_child(this._label('引擎: ' + engine, 'st-popup-dim'));
+        return scroll;
     }
 
     _copyText(data, sourceText) {
