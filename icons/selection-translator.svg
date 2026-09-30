@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- 划词翻译 selection-translator
-     橙色圆角底 + 白色对称放大镜（镜片圆环 + 竖直手柄），镜片左上加一点高光。 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img"
+     橙色圆角底 + 白色对称放大镜（镜片圆环 + 竖直手柄），镜片左上加一点高光。
+     图形四周留白 8/144（约 5.5%），使它在应用列表里与其它图标视觉大小一致。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-8 -8 144 144" role="img"
      aria-label="划词翻译">
   <title>划词翻译</title>
 

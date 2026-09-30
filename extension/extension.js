@@ -18,7 +18,7 @@ const CONFIG_FILE = GLib.build_filenamev(
 
 // 顶栏图标：与应用列表（应用抽屉）共用同一个 SVG，见 icons/
 const PANEL_ICON_FILE = 'selection-translator.svg';
-const PANEL_ICON_SIZE = 16;
+const PANEL_ICON_SIZE = 15;
 
 const BTN_AUTOHIDE_MS = 6000;
 const HOVER_GRACE_MS = 400;
