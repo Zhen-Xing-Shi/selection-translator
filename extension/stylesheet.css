@@ -54,12 +54,21 @@
     height: 1px;
     margin: 6px 0;
 }
+.st-popup-footer {
+    margin-top: 10px;
+}
 .st-popup-btn {
     background-color: #f1f3f4;
     color: #1a1a1a;
     border-radius: 6px;
     padding: 4px 12px;
     font-size: 12px;
+}
+.st-popup-footer .st-popup-btn {
+    margin-right: 12px;
+}
+.st-popup-footer .st-popup-btn:last-child {
+    margin-right: 0;
 }
 .st-popup-btn:hover {
     background-color: #e2e5e7;
