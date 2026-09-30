@@ -566,40 +566,57 @@ class SelectionTranslator {
         if (this._config.darkMode)
             box.add_style_class_name('st-dark');
 
-        if (data && data.kind === 'word') {
-            this._fillWord(box, data);
-        } else if (data && data.kind === 'sentence') {
-            this._fillSentence(box, data);
-        } else {
-            // 加载中 / 错误提示
-            box.add_child(this._label(title || '提示', 'st-popup-word'));
-            if (message)
-                box.add_child(this._label(message, 'st-popup-line'));
-        }
-
-        // 底部按钮行
-        const footer = new St.BoxLayout({style_class: 'st-popup-footer'});
-        footer.add_style_pseudo_class('footer');
-        const copyBtn = new St.Button({
-            style_class: 'st-popup-btn', label: '复制结果', reactive: true,
+        // 顶部行：左侧标题区，右上角圆形图标按钮（复制结果 / 关闭）
+        const topRow = new St.BoxLayout({x_expand: true});
+        const headBox = new St.BoxLayout({
+            x_expand: true, y_align: Clutter.ActorAlign.CENTER,
         });
+        topRow.add_child(headBox);
+
+        const copyIcon = new St.Icon({
+            icon_name: 'edit-copy-symbolic', icon_size: 14,
+        });
+        const copyBtn = new St.Button({
+            style_class: 'st-popup-iconbtn', child: copyIcon,
+            reactive: true, can_focus: false,
+        });
+        copyBtn.set_accessible_name('复制结果');
         copyBtn.connect('clicked', () => {
             St.Clipboard.get_default().set_text(
                 St.ClipboardType.CLIPBOARD, this._copyText(data, sourceText));
-            copyBtn.label = '已复制 ✓';
+            copyIcon.icon_name = 'emblem-ok-symbolic';
+            copyBtn.add_style_class_name('copied');
             GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1200, () => {
-                if (copyBtn && !copyBtn.is_finalized())
-                    copyBtn.label = '复制结果';
+                if (!copyBtn.is_finalized()) {
+                    copyIcon.icon_name = 'edit-copy-symbolic';
+                    copyBtn.remove_style_class_name('copied');
+                }
                 return GLib.SOURCE_REMOVE;
             });
         });
         const closeBtn = new St.Button({
-            style_class: 'st-popup-btn', label: '关闭', reactive: true,
+            style_class: 'st-popup-iconbtn', reactive: true,
+            can_focus: false,
+            child: new St.Icon({
+                icon_name: 'window-close-symbolic', icon_size: 14,
+            }),
         });
+        closeBtn.set_accessible_name('关闭');
         closeBtn.connect('clicked', () => this._closePopup());
-        footer.add_child(copyBtn);
-        footer.add_child(closeBtn);
-        box.add_child(footer);
+        topRow.add_child(copyBtn);
+        topRow.add_child(closeBtn);
+        box.add_child(topRow);
+
+        if (data && data.kind === 'word') {
+            this._fillWord(headBox, box, data);
+        } else if (data && data.kind === 'sentence') {
+            this._fillSentence(headBox, box, data);
+        } else {
+            // 加载中 / 错误提示
+            headBox.add_child(this._label(title || '提示', 'st-popup-word'));
+            if (message)
+                box.add_child(this._label(message, 'st-popup-line'));
+        }
 
         Main.layoutManager.uiGroup.add_child(box);
 
@@ -654,19 +671,17 @@ class SelectionTranslator {
             });
     }
 
-    _fillWord(box, d) {
-        // 标题行：单词 + 音标
-        const head = new St.BoxLayout();
+    _fillWord(headBox, box, d) {
+        // 标题区（顶部行左侧）：单词 + 音标
         const wordText = d.lemma && d.lemma !== d.query.toLowerCase()
             ? `${d.query} → ${d.word}` : d.word;
-        head.add_child(this._label(wordText, 'st-popup-word'));
+        headBox.add_child(this._label(wordText, 'st-popup-word'));
         if (d.phonetic) {
             const ph = this._label(`  /${d.phonetic}/`, 'st-popup-phonetic');
             ph.set_y_align(Clutter.ActorAlign.END);
             ph.set_y_expand(true);
-            head.add_child(ph);
+            headBox.add_child(ph);
         }
-        box.add_child(head);
 
         // 标签行：柯林斯星级 / 考试标签
         const meta = [];
@@ -702,8 +717,8 @@ class SelectionTranslator {
         box.add_child(scroll);
     }
 
-    _fillSentence(box, d) {
-        box.add_child(this._label(d.source, 'st-popup-src'));
+    _fillSentence(headBox, box, d) {
+        headBox.add_child(this._label(d.source, 'st-popup-src'));
         box.add_child(this._sep());
         const scroll = new St.ScrollView({
             style_class: 'st-scroll', hscrollbar_policy: St.PolicyType.NEVER,
