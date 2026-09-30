@@ -75,7 +75,7 @@ class SelectionTranslator {
         }
     }
 
-    // ---------- 暗黑模式 ----------
+    // ---------- 暗色模式 ----------
     _applyTheme() {
         const dark = !!this._config.darkMode;
         for (const actor of [this._button, this._popup]) {
@@ -198,9 +198,9 @@ class SelectionTranslator {
         });
         this._indicator.menu.addMenuItem(autoItem);
 
-        // 暗黑模式开关：即时应用到悬浮按钮和释义卡片
+        // 暗色模式开关：即时应用到悬浮按钮和释义卡片
         const darkItem = new PopupMenu.PopupSwitchMenuItem(
-            '暗黑模式', this._config.darkMode);
+            '暗色模式', this._config.darkMode);
         darkItem.connect('toggled', item => {
             this._config.darkMode = item.state;
             this._saveConfig();
